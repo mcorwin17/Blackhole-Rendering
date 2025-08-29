@@ -1,5 +1,5 @@
 CXX = g++
-CXXFLAGS = -std=c++17 -Wall -O2
+CXXFLAGS = -std=c++17 -Wall -O3 -march=native
 TARGET = blackhole
 SOURCE = main.cc
 

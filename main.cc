@@ -131,7 +131,7 @@ public:
 
 Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
     double step = 0.1;
-    double max_dist = 20.0;
+    double max_dist = 50.0;
     Vec3 pos = origin;
     
     for (double t = 0; t < max_dist; t += step) {
@@ -210,7 +210,7 @@ int main() {
     Vec3 cam_up(0, 1, 0);
     Camera cam(cam_pos, cam_dir, cam_up, M_PI / 3);
     
-    render(cam, bh, 400, 300, "black_hole.ppm");
+    render(cam, bh, 800, 600, "black_hole.ppm");
     
     return 0;
 }
