@@ -1,4 +1,4 @@
-// basic vector math for raytracing
+// black hole raytracer with gravitational lensing
 // Maxwell Corwin 2024
 
 #include <iostream>
