@@ -38,4 +38,4 @@ not 100% accurate but gives a decent approximation of what you'd actually see
 - [ ] add better anti-aliasing
 - [ ] implement kerr metric for rotating black holes
 - [ ] add real-time rendering option
-- [ ] better disk texture/detail
+- [ ] better disk texture/detail# final update
