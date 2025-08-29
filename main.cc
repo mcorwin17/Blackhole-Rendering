@@ -64,13 +64,35 @@ struct Camera {
     }
 };
 
+class BlackHole {
+public:
+    Vec3 pos;
+    double mass;
+    double schwarzschild_r;
+    
+    BlackHole(Vec3 p, double m) : pos(p), mass(m) {
+        schwarzschild_r = 2.0 * mass;
+    }
+    
+    Vec3 gravity(const Vec3& point) const {
+        Vec3 r = point - pos;
+        double dist = r.length();
+        if (dist < schwarzschild_r * 1.01) return Vec3();
+        
+        double factor = -mass / (dist * dist * dist);
+        return r * factor;
+    }
+};
+
 int main() {
-    cout << "camera test\n";
+    cout << "black hole test\n";
     
-    Camera cam(Vec3(0, 0, -5), Vec3(0, 0, 1), Vec3(0, 1, 0), M_PI / 3);
+    BlackHole bh(Vec3(0, 0, 0), 1.0);
+    cout << "schwarzschild radius: " << bh.schwarzschild_r << "\n";
     
-    Vec3 ray = cam.get_ray_dir(400, 300, 800, 600);
-    cout << "center ray: " << ray.x << " " << ray.y << " " << ray.z << "\n";
+    Vec3 test_point(5, 0, 0);
+    Vec3 grav = bh.gravity(test_point);
+    cout << "gravity at (5,0,0): " << grav.x << " " << grav.y << " " << grav.z << "\n";
     
     return 0;
 }
