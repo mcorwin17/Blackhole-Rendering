@@ -2,6 +2,8 @@
 // Maxwell Corwin 2024
 
 #include <iostream>
+#include <fstream>
+#include <vector>
 #include <cmath>
 
 using namespace std;
@@ -150,15 +152,52 @@ Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
     return Color(0.02, 0.02, 0.05); // space background
 }
 
+void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& filename) {
+    vector<vector<Color>> img(h, vector<Color>(w));
+    
+    cout << "rendering " << w << "x" << h << "...\n";
+    
+    for (int y = 0; y < h; y++) {
+        if (y % (h / 10) == 0) {
+            cout << "progress: " << (100 * y / h) << "%\n";
+        }
+        
+        for (int x = 0; x < w; x++) {
+            Vec3 ray_dir = cam.get_ray_dir(x, y, w, h);
+            Color pixel = trace_ray(cam.pos, ray_dir, bh);
+            img[y][x] = pixel.clamp();
+        }
+    }
+    
+    ofstream file(filename);
+    file << "P3\n" << w << " " << h << "\n255\n";
+    
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            Color& c = img[y][x];
+            int r = int(c.r * 255);
+            int g = int(c.g * 255);
+            int b = int(c.b * 255);
+            file << r << " " << g << " " << b << "\n";
+        }
+    }
+    
+    file.close();
+    cout << "saved " << filename << "\n";
+}
+
 int main() {
-    cout << "ray marching test\n";
+    cout << "black hole raytracer\n";
     
     BlackHole bh(Vec3(0, 0, 0), 1.0);
-    Vec3 ray_origin(0, 0, -5);
-    Vec3 ray_dir(0, 0, 1);
     
-    Color result = trace_ray(ray_origin, ray_dir, bh);
-    cout << "ray result: " << result.r << " " << result.g << " " << result.b << "\n";
+    Vec3 cam_pos(0, 2, -8);
+    Vec3 cam_dir = (Vec3(0, 0, 0) - cam_pos).normalize();
+    Vec3 cam_up(0, 1, 0);
+    Camera cam(cam_pos, cam_dir, cam_up, M_PI / 3);
+    
+    render(cam, bh, 400, 300, "black_hole.ppm");
     
     return 0;
 }
+
