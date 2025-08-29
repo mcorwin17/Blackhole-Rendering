@@ -119,13 +119,19 @@ public:
         double temp = 1.0 / (dist / schwarzschild_r);
         temp = min(1.0, max(0.1, temp));
         
+        double orbital_vel = sqrt(mass / dist);
+        double doppler = 1.0 + orbital_vel * 0.1;
+        
+        Color color;
         if (temp > 0.8) {
-            return Color(1.0, 0.9, 0.6) * temp;  // hot
+            color = Color(1.0, 0.9, 0.6);  // hot
         } else if (temp > 0.5) {
-            return Color(1.0, 0.6, 0.2) * temp;  // warm
+            color = Color(1.0, 0.6, 0.2);  // warm
         } else {
-            return Color(0.8, 0.2, 0.1) * temp;  // cool
+            color = Color(0.8, 0.2, 0.1);  // cool
         }
+        
+        return color * temp * doppler;
     }
 };
 
@@ -146,7 +152,9 @@ Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
         
         Vec3 hit_point;
         if (bh.hit_disk(pos, dir, hit_point)) {
-            return bh.disk_color(hit_point);
+            Color disk_col = bh.disk_color(hit_point);
+            double glow = 1.0 / (1.0 + (hit_point - pos).length());
+            return disk_col * glow;
         }
     }
     
