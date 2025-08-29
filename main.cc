@@ -93,77 +93,101 @@ public:
         Vec3 r = ray_pos - pos;
         double dist = r.length();
         
-        if (dist < schwarzschild_r * 1.1) return ray_dir;
+        // photon sphere at 1.5 * schwarzschild radius
+        if (dist < schwarzschild_r * 1.5) {
+            if (dist < schwarzschild_r) return ray_dir; // past event horizon
+            // strong deflection near photon sphere
+            double bend_factor = 1.0 / (dist - schwarzschild_r);
+            Vec3 toward_center = (pos - ray_pos).normalize();
+            return (ray_dir + toward_center * bend_factor * 0.1).normalize();
+        }
         
-        // stronger lensing effect
-        double bend_angle = 6.0 * mass / dist;
-        Vec3 perp = ray_dir.cross(r).cross(ray_dir).normalize();
-        return (ray_dir + perp * bend_angle).normalize();
+        // gentle lensing for distant rays
+        if (dist > schwarzschild_r * 10) return ray_dir;
+        
+        double bend_angle = 2.0 * mass / (dist * dist);
+        Vec3 toward_center = (pos - ray_pos).normalize();
+        Vec3 perp = ray_dir.cross(toward_center).cross(ray_dir).normalize();
+        return (ray_dir + perp * bend_angle * 0.1).normalize();
     }
     
     bool hit_disk(const Vec3& ray_pos, const Vec3& ray_dir, Vec3& hit_point) const {
-        if (abs(ray_dir.y) < 1e-6) return false;
+        // disk in XZ plane (y = 0)
+        if (abs(ray_dir.y) < 1e-6) return false;  // parallel to disk
         
-        double t = -ray_pos.y / ray_dir.y;
-        if (t < 0) return false;
+        double t = (pos.y - ray_pos.y) / ray_dir.y;  // intersect with y=0 plane
+        if (t < 0 || t > 2.0) return false;  // behind ray or too far
         
         hit_point = ray_pos + ray_dir * t;
-        double dist = (hit_point - pos).length();
+        double dist_from_center = sqrt((hit_point.x - pos.x) * (hit_point.x - pos.x) + 
+                                      (hit_point.z - pos.z) * (hit_point.z - pos.z));
         
-        return dist >= disk_inner && dist <= disk_outer;
+        return dist_from_center >= disk_inner && dist_from_center <= disk_outer;
     }
     
     Color disk_color(const Vec3& point) const {
-        Vec3 r = point - pos;
-        double dist = r.length();
+        double dist_from_center = sqrt((point.x - pos.x) * (point.x - pos.x) + 
+                                      (point.z - pos.z) * (point.z - pos.z));
         
-        double temp = 1.5 / (dist / schwarzschild_r);  // hotter disk
-        temp = min(2.0, max(0.2, temp));  // brighter range
+        // temperature falls off with distance
+        double temp = 1.0 / (dist_from_center / schwarzschild_r);
+        temp = min(1.0, max(0.1, temp));
         
-        double orbital_vel = sqrt(mass / dist);
-        double doppler = 1.0 + orbital_vel * 0.2;  // stronger doppler
+        // realistic orbital velocity
+        double orbital_vel = sqrt(mass / dist_from_center);
+        double doppler = 1.0 + orbital_vel * 0.1;
         
         Color color;
-        if (temp > 1.2) {
-            color = Color(1.0, 1.0, 0.9);  // brilliant white-hot
-        } else if (temp > 0.8) {
-            color = Color(1.0, 0.9, 0.4);  // bright yellow-white
-        } else if (temp > 0.5) {
-            color = Color(1.0, 0.7, 0.1);  // orange
+        if (temp > 0.8) {
+            color = Color(1.0, 0.95, 0.8);  // hot white
+        } else if (temp > 0.6) {
+            color = Color(1.0, 0.8, 0.4);   // yellow
+        } else if (temp > 0.4) {
+            color = Color(1.0, 0.6, 0.2);   // orange  
         } else {
-            color = Color(0.9, 0.3, 0.1);  // red
+            color = Color(0.8, 0.3, 0.1);   // red
         }
         
-        // add brightness boost
-        double brightness = 1.5 + temp * 0.5;
-        return color * temp * doppler * brightness;
+        return color * temp * doppler;
     }
 };
 
 Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
-    double step = 0.1;
-    double max_dist = 50.0;
     Vec3 pos = origin;
+    double total_dist = 0;
+    const double max_dist = 50.0;
     
-    for (double t = 0; t < max_dist; t += step) {
-        dir = bh.bend_ray(pos, dir);
-        pos = pos + dir * step;
-        
+    for (int steps = 0; steps < 500 && total_dist < max_dist; steps++) {
         double dist_to_bh = (pos - bh.pos).length();
         
-        if (dist_to_bh < bh.schwarzschild_r) {
-            return Color(0, 0, 0);  // fell into black hole
+        // adaptive step size based on distance to black hole
+        double step = 0.05;
+        if (dist_to_bh > bh.schwarzschild_r * 5) step = 0.2;
+        else if (dist_to_bh > bh.schwarzschild_r * 2) step = 0.1;
+        
+        // check for event horizon
+        if (dist_to_bh < bh.schwarzschild_r * 1.01) {
+            return Color(0, 0, 0);  // event horizon
         }
         
+        // check disk intersection before moving
         Vec3 hit_point;
         if (bh.hit_disk(pos, dir, hit_point)) {
-            Color disk_col = bh.disk_color(hit_point);
-            double glow = 1.5 / (1.0 + (hit_point - pos).length() * 0.5);
-            
-            // add disk bloom effect
-            double bloom = 1.0 + 0.3 / (1.0 + (hit_point - bh.pos).length());
-            return disk_col * glow * bloom;
+            double hit_dist = (hit_point - pos).length();
+            if (hit_dist < step * 2) {  // close enough to disk
+                Color disk_col = bh.disk_color(hit_point);
+                double intensity = 1.0 + 0.5 / (1.0 + hit_dist);
+                return disk_col * intensity;
+            }
         }
+        
+        // apply gravitational bending (less frequently)
+        if (steps % 3 == 0) {
+            dir = bh.bend_ray(pos, dir);
+        }
+        
+        pos = pos + dir * step;
+        total_dist += step;
     }
     
     // stars and nebula
