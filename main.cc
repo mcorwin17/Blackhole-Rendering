@@ -36,16 +36,41 @@ struct Color {
     Color operator*(double t) const { 
         return Color(r * t, g * t, b * t); 
     }
+    
+    Color clamp() const { 
+        return Color(min(1.0, max(0.0, r)),
+                    min(1.0, max(0.0, g)),
+                    min(1.0, max(0.0, b))); 
+    }
+};
+
+struct Camera {
+    Vec3 pos, dir, up;
+    double fov;
+    
+    Camera(Vec3 p, Vec3 d, Vec3 u, double f) : pos(p), dir(d.normalize()), up(u.normalize()), fov(f) {}
+    
+    Vec3 get_ray_dir(double x, double y, int w, int h) const {
+        double aspect = double(w) / h;
+        double scale = tan(fov * 0.5);
+        
+        double px = (2 * x / w - 1) * scale * aspect;
+        double py = (1 - 2 * y / h) * scale;
+        
+        Vec3 right = dir.cross(up).normalize();
+        Vec3 new_up = right.cross(dir).normalize();
+        
+        return (dir + right * px + new_up * py).normalize();
+    }
 };
 
 int main() {
-    cout << "vector math test\n";
+    cout << "camera test\n";
     
-    Vec3 a(1, 0, 0);
-    Vec3 b(0, 1, 0);
-    Vec3 c = a.cross(b);
+    Camera cam(Vec3(0, 0, -5), Vec3(0, 0, 1), Vec3(0, 1, 0), M_PI / 3);
     
-    cout << "cross product: " << c.x << " " << c.y << " " << c.z << "\n";
+    Vec3 ray = cam.get_ray_dir(400, 300, 800, 600);
+    cout << "center ray: " << ray.x << " " << ray.y << " " << ray.z << "\n";
     
     return 0;
 }
