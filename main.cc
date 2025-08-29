@@ -95,7 +95,8 @@ public:
         
         if (dist < schwarzschild_r * 1.1) return ray_dir;
         
-        double bend_angle = 4.0 * mass / dist;
+        // stronger lensing effect
+        double bend_angle = 6.0 * mass / dist;
         Vec3 perp = ray_dir.cross(r).cross(ray_dir).normalize();
         return (ray_dir + perp * bend_angle).normalize();
     }
@@ -116,22 +117,26 @@ public:
         Vec3 r = point - pos;
         double dist = r.length();
         
-        double temp = 1.0 / (dist / schwarzschild_r);
-        temp = min(1.0, max(0.1, temp));
+        double temp = 1.5 / (dist / schwarzschild_r);  // hotter disk
+        temp = min(2.0, max(0.2, temp));  // brighter range
         
         double orbital_vel = sqrt(mass / dist);
-        double doppler = 1.0 + orbital_vel * 0.1;
+        double doppler = 1.0 + orbital_vel * 0.2;  // stronger doppler
         
         Color color;
-        if (temp > 0.8) {
-            color = Color(1.0, 0.9, 0.6);  // hot
+        if (temp > 1.2) {
+            color = Color(1.0, 1.0, 0.9);  // brilliant white-hot
+        } else if (temp > 0.8) {
+            color = Color(1.0, 0.9, 0.4);  // bright yellow-white
         } else if (temp > 0.5) {
-            color = Color(1.0, 0.6, 0.2);  // warm
+            color = Color(1.0, 0.7, 0.1);  // orange
         } else {
-            color = Color(0.8, 0.2, 0.1);  // cool
+            color = Color(0.9, 0.3, 0.1);  // red
         }
         
-        return color * temp * doppler;
+        // add brightness boost
+        double brightness = 1.5 + temp * 0.5;
+        return color * temp * doppler * brightness;
     }
 };
 
@@ -153,25 +158,39 @@ Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
         Vec3 hit_point;
         if (bh.hit_disk(pos, dir, hit_point)) {
             Color disk_col = bh.disk_color(hit_point);
-            double glow = 1.0 / (1.0 + (hit_point - pos).length());
-            return disk_col * glow;
+            double glow = 1.5 / (1.0 + (hit_point - pos).length() * 0.5);
+            
+            // add disk bloom effect
+            double bloom = 1.0 + 0.3 / (1.0 + (hit_point - bh.pos).length());
+            return disk_col * glow * bloom;
         }
     }
     
-    // stars
+    // stars and nebula
     hash<string> hasher;
     string seed = to_string(int(dir.x * 1000)) + "," + 
                   to_string(int(dir.y * 1000)) + "," + 
                   to_string(int(dir.z * 1000));
     double noise = double(hasher(seed) % 1000) / 1000.0;
     
-    if (noise > 0.995) {
-        return Color(1, 1, 1) * (noise - 0.995) * 20;
-    } else if (noise > 0.98) {
-        return Color(0.5, 0.5, 0.8) * (noise - 0.98) * 5;
+    // brighter stars
+    if (noise > 0.994) {
+        return Color(1, 1, 1) * (noise - 0.994) * 50;  // bright white stars
+    } else if (noise > 0.985) {
+        return Color(0.8, 0.8, 1.0) * (noise - 0.985) * 15;  // blue stars
+    } else if (noise > 0.975) {
+        return Color(1.0, 0.7, 0.5) * (noise - 0.975) * 8;   // orange stars
     }
     
-    return Color(0.02, 0.02, 0.05);
+    // subtle nebula background
+    string nebula_seed = to_string(int(dir.x * 100)) + "," + to_string(int(dir.y * 100));
+    double nebula_noise = double(hasher(nebula_seed) % 1000) / 1000.0;
+    if (nebula_noise > 0.7) {
+        Color nebula = Color(0.1, 0.05, 0.15) * (nebula_noise - 0.7) * 0.5;
+        return Color(0.03, 0.03, 0.08) + nebula;
+    }
+    
+    return Color(0.03, 0.03, 0.08);  // darker space
 }
 
 void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& filename) {
