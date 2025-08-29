@@ -252,7 +252,7 @@ void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& 
 }
 
 int main() {
-    cout << "black hole raytracer v1.0\n";
+    cout << "black hole raytracer v1.0 - maxwell corwin\n";
     
     BlackHole bh(Vec3(0, 0, 0), 1.0);
     
