@@ -82,17 +82,47 @@ public:
         double factor = -mass / (dist * dist * dist);
         return r * factor;
     }
+    
+    Vec3 bend_ray(const Vec3& ray_pos, const Vec3& ray_dir) const {
+        Vec3 r = ray_pos - pos;
+        double dist = r.length();
+        
+        if (dist < schwarzschild_r * 1.1) return ray_dir;
+        
+        double bend_angle = 4.0 * mass / dist;
+        Vec3 perp = ray_dir.cross(r).cross(ray_dir).normalize();
+        return (ray_dir + perp * bend_angle).normalize();
+    }
 };
 
+Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
+    double step = 0.1;
+    double max_dist = 20.0;
+    Vec3 pos = origin;
+    
+    for (double t = 0; t < max_dist; t += step) {
+        dir = bh.bend_ray(pos, dir);
+        pos = pos + dir * step;
+        
+        double dist_to_bh = (pos - bh.pos).length();
+        
+        if (dist_to_bh < bh.schwarzschild_r) {
+            return Color(0, 0, 0);  // fell into black hole
+        }
+    }
+    
+    return Color(0.02, 0.02, 0.05); // space background
+}
+
 int main() {
-    cout << "black hole test\n";
+    cout << "ray marching test\n";
     
     BlackHole bh(Vec3(0, 0, 0), 1.0);
-    cout << "schwarzschild radius: " << bh.schwarzschild_r << "\n";
+    Vec3 ray_origin(0, 0, -5);
+    Vec3 ray_dir(0, 0, 1);
     
-    Vec3 test_point(5, 0, 0);
-    Vec3 grav = bh.gravity(test_point);
-    cout << "gravity at (5,0,0): " << grav.x << " " << grav.y << " " << grav.z << "\n";
+    Color result = trace_ray(ray_origin, ray_dir, bh);
+    cout << "ray result: " << result.r << " " << result.g << " " << result.b << "\n";
     
     return 0;
 }
