@@ -33,6 +33,11 @@ uses simplified general relativity calculations for:
 
 not 100% accurate but gives a decent approximation of what you'd actually see
 
+## features
+- realistic schwarzschild metric calculations
+- adaptive ray marching for performance
+- temperature-based accretion disk coloring
+
 ## todo
 
 - [ ] add better anti-aliasing
