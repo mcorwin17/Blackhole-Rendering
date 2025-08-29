@@ -5,6 +5,7 @@
 #include <fstream>
 #include <vector>
 #include <cmath>
+#include <random>
 
 using namespace std;
 
@@ -149,7 +150,20 @@ Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
         }
     }
     
-    return Color(0.02, 0.02, 0.05); // space background
+    // stars
+    hash<string> hasher;
+    string seed = to_string(int(dir.x * 1000)) + "," + 
+                  to_string(int(dir.y * 1000)) + "," + 
+                  to_string(int(dir.z * 1000));
+    double noise = double(hasher(seed) % 1000) / 1000.0;
+    
+    if (noise > 0.995) {
+        return Color(1, 1, 1) * (noise - 0.995) * 20;
+    } else if (noise > 0.98) {
+        return Color(0.5, 0.5, 0.8) * (noise - 0.98) * 5;
+    }
+    
+    return Color(0.02, 0.02, 0.05);
 }
 
 void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& filename) {
