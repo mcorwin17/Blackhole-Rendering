@@ -287,12 +287,23 @@ int main() {
     
     BlackHole bh(Vec3(0, 0, 0), 1.0);
     
-    Vec3 cam_pos(0, 2, -8);
-    Vec3 cam_dir = (Vec3(0, 0, 0) - cam_pos).normalize();
-    Vec3 cam_up(0, 1, 0);
-    Camera cam(cam_pos, cam_dir, cam_up, M_PI / 3);
+    // multiple camera angles
+    vector<Vec3> positions = {
+        Vec3(0, 2, -8),    // original view
+        Vec3(-6, 1, -4),   // side angle
+        Vec3(0, 5, -6)     // top-down view
+    };
     
-    render(cam, bh, 800, 600, "black_hole.ppm");
+    for (int i = 0; i < positions.size(); i++) {
+        Vec3 cam_pos = positions[i];
+        Vec3 cam_dir = (Vec3(0, 0, 0) - cam_pos).normalize();
+        Vec3 cam_up(0, 1, 0);
+        Camera cam(cam_pos, cam_dir, cam_up, M_PI / 3);
+        
+        string filename = "black_hole_" + to_string(i + 1) + ".ppm";
+        cout << "rendering view " << (i + 1) << "/" << positions.size() << "...\n";
+        render(cam, bh, 800, 600, filename);
+    }
     
     return 0;
 }
