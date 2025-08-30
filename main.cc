@@ -45,6 +45,15 @@ struct Color {
                     min(1.0, max(0.0, g)),
                     min(1.0, max(0.0, b))); 
     }
+    
+    Color enhance_contrast() const {
+        // gamma correction and contrast boost
+        double gamma = 0.8;
+        double contrast = 1.2;
+        return Color(pow(r * contrast, gamma),
+                    pow(g * contrast, gamma), 
+                    pow(b * contrast, gamma));
+    }
 };
 
 struct Camera {
@@ -252,7 +261,7 @@ void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& 
                     pixel_sum = pixel_sum + trace_ray(cam.pos, ray_dir, bh);
                 }
             }
-            img[y][x] = (pixel_sum * 0.25).clamp();
+            img[y][x] = (pixel_sum * 0.25).enhance_contrast().clamp();
         }
     }
     
