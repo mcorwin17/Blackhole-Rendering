@@ -137,6 +137,11 @@ public:
         double orbital_vel = sqrt(mass / dist_from_center);
         double doppler = 1.0 + orbital_vel * 0.1;
         
+        // add particle turbulence effects
+        double angle = atan2(point.z - pos.z, point.x - pos.x);
+        double turbulence = sin(angle * 8 + dist_from_center * 2) * 0.15 + 1.0;
+        temp *= turbulence;
+        
         Color color;
         if (temp > 0.8) {
             color = Color(1.0, 0.95, 0.8);  // hot white
