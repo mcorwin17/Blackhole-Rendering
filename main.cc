@@ -228,9 +228,17 @@ void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& 
         }
         
         for (int x = 0; x < w; x++) {
-            Vec3 ray_dir = cam.get_ray_dir(x, y, w, h);
-            Color pixel = trace_ray(cam.pos, ray_dir, bh);
-            img[y][x] = pixel.clamp();
+            // anti-aliasing with 4x supersampling
+            Color pixel_sum(0, 0, 0);
+            for (int dx = 0; dx < 2; dx++) {
+                for (int dy = 0; dy < 2; dy++) {
+                    double sub_x = x + (dx + 0.5) * 0.5;
+                    double sub_y = y + (dy + 0.5) * 0.5;
+                    Vec3 ray_dir = cam.get_ray_dir(sub_x, sub_y, w, h);
+                    pixel_sum = pixel_sum + trace_ray(cam.pos, ray_dir, bh);
+                }
+            }
+            img[y][x] = (pixel_sum * 0.25).clamp();
         }
     }
     
