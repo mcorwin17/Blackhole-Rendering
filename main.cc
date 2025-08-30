@@ -174,9 +174,10 @@ Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
     for (int steps = 0; steps < 500 && total_dist < max_dist; steps++) {
         double dist_to_bh = (pos - bh.pos).length();
         
-        // adaptive step size based on distance to black hole
+        // optimized adaptive step size
         double step = 0.05;
-        if (dist_to_bh > bh.schwarzschild_r * 5) step = 0.2;
+        if (dist_to_bh > bh.schwarzschild_r * 8) step = 0.4;
+        else if (dist_to_bh > bh.schwarzschild_r * 5) step = 0.2;
         else if (dist_to_bh > bh.schwarzschild_r * 2) step = 0.1;
         
         // check for event horizon
@@ -283,7 +284,8 @@ void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& 
 }
 
 int main() {
-    cout << "black hole raytracer v1.0 - maxwell corwin\n";
+    cout << "black hole raytracer v2.0 - maxwell corwin\n";
+    cout << "enhanced with anti-aliasing, lens flares, and particle effects\n";
     
     BlackHole bh(Vec3(0, 0, 0), 1.0);
     
