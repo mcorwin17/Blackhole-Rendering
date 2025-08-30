@@ -177,6 +177,15 @@ Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
             if (hit_dist < step * 2) {  // close enough to disk
                 Color disk_col = bh.disk_color(hit_point);
                 double intensity = 1.0 + 0.5 / (1.0 + hit_dist);
+                
+                // add lens flare effect near event horizon
+                double dist_to_center = (hit_point - bh.pos).length();
+                if (dist_to_center < bh.schwarzschild_r * 4) {
+                    double flare_strength = 1.0 / (1.0 + (dist_to_center - bh.schwarzschild_r));
+                    Color flare = Color(0.8, 0.9, 1.0) * flare_strength * 0.3;
+                    disk_col = disk_col + flare;
+                }
+                
                 return disk_col * intensity;
             }
         }
