@@ -1,5 +1,5 @@
 // black hole raytracer with gravitational lensing
-// Maxwell Corwin 2024
+// Maxwell Corwin 2025
 
 #include <iostream>
 #include <fstream>
@@ -310,3 +310,4 @@ int main() {
     return 0;
 }
 
+//this is a very dumbed down version of a blackhole just for me to test vector drawing in c++ :>)
