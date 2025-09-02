@@ -1,0 +1,3 @@
+# Ignore PPM image files
+*.ppm
+*blackhole*
