@@ -155,6 +155,3 @@ MIT License - see LICENSE file for details.
 
 Maxwell Corwin - maxwellcorwin13@gmail.com
 
----
-
-*Built for educational purposes and scientific visualization. Not intended for professional astronomical research.*
