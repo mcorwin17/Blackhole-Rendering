@@ -7,6 +7,13 @@
  * @author Maxwell Corwin
  * @date 2025
  * @version 2.0
+ * 
+ * CREDITS AND SOURCES:
+ * - Physics formulas from "General Relativity" by Robert M. Wald
+ * - Gravitational lensing from "Gravitational Lensing: Strong, Weak & Micro"
+ * - Accretion disk physics from "Black Hole Astrophysics: The Engine Paradigm"
+ * - Vector math patterns from "3D Math Primer for Graphics and Game Development"
+ * - Ray marching techniques from "Real-Time Rendering" textbook
  */
 
 #include <iostream>
