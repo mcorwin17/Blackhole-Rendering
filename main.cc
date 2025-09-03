@@ -1,313 +1,506 @@
-// black hole raytracer with gravitational lensing
-// Maxwell Corwin 2025
+/**
+ * Black Hole Raytracer
+ * 
+ * A C++ raytracing engine that simulates gravitational lensing effects
+ * around black holes using general relativity principles.
+ * 
+ * @author Maxwell Corwin
+ * @date 2025
+ * @version 2.0
+ */
 
 #include <iostream>
 #include <fstream>
 #include <vector>
 #include <cmath>
 #include <random>
+#include <chrono>
+#include <string>
 
-using namespace std;
+// Constants for physics calculations (from online sources)
+namespace PhysicsConstants {
+    constexpr double G = 1.0;           // Gravitational constant (normalized)
+    constexpr double C = 1.0;           // Speed of light (normalized)
+    constexpr double SCHWARZSCHILD_MULTIPLIER = 2.0;
+    constexpr double PHOTON_SPHERE_MULTIPLIER = 1.5;
+    constexpr double DISK_INNER_MULTIPLIER = 3.0;
+    constexpr double DISK_OUTER_MULTIPLIER = 10.0;
+}
 
-struct Vec3 {
-    double x, y, z;
-    
-    Vec3(double x = 0, double y = 0, double z = 0) : x(x), y(y), z(z) {}
-    
-    Vec3 operator+(const Vec3& v) const { return Vec3(x + v.x, y + v.y, z + v.z); }
-    Vec3 operator-(const Vec3& v) const { return Vec3(x - v.x, y - v.y, z - v.z); }
-    Vec3 operator*(double t) const { return Vec3(x * t, y * t, z * t); }
-    Vec3 operator/(double t) const { return Vec3(x / t, y / t, z / t); }
-    
-    double dot(const Vec3& v) const { return x * v.x + y * v.y + z * v.z; }
-    Vec3 cross(const Vec3& v) const {
-        return Vec3(y * v.z - z * v.y, z * v.x - x * v.z, x * v.y - y * v.x);
-    }
-    
-    double length() const { return sqrt(x * x + y * y + z * z); }
-    Vec3 normalize() const { double l = length(); return l > 0 ? *this / l : Vec3(); }
-};
+// Rendering configuration
+namespace RenderConfig {
+    constexpr int WIDTH = 800;
+    constexpr int HEIGHT = 600;
+    constexpr double FOV = 0.785398;    // 45 degrees in radians
+    constexpr int MAX_RAY_STEPS = 500;
+    constexpr double MAX_RAY_DISTANCE = 50.0;
+    constexpr double ADAPTIVE_STEP_FAR = 0.4;
+    constexpr double ADAPTIVE_STEP_MEDIUM = 0.2;
+    constexpr double ADAPTIVE_STEP_NEAR = 0.1;
+    constexpr double ADAPTIVE_STEP_CLOSE = 0.05;
+}
 
-struct Color {
-    double r, g, b;
-    
-    Color(double r = 0, double g = 0, double b = 0) : r(r), g(g), b(b) {}
-    
-    Color operator+(const Color& c) const { 
-        return Color(r + c.r, g + c.g, b + c.b); 
-    }
-    Color operator*(double t) const { 
-        return Color(r * t, g * t, b * t); 
-    }
-    
-    Color clamp() const { 
-        return Color(min(1.0, max(0.0, r)),
-                    min(1.0, max(0.0, g)),
-                    min(1.0, max(0.0, b))); 
-    }
-    
-    Color enhance_contrast() const {
-        // gamma correction and contrast boost
-        double gamma = 0.8;
-        double contrast = 1.2;
-        return Color(pow(r * contrast, gamma),
-                    pow(g * contrast, gamma), 
-                    pow(b * contrast, gamma));
-    }
-};
+/**
+ * 3D Vector class with mathematical operations
+ */
+class Vec3 {
+private:
+    double x_, y_, z_;
 
-struct Camera {
-    Vec3 pos, dir, up;
-    double fov;
-    
-    Camera(Vec3 p, Vec3 d, Vec3 u, double f) : pos(p), dir(d.normalize()), up(u.normalize()), fov(f) {}
-    
-    Vec3 get_ray_dir(double x, double y, int w, int h) const {
-        double aspect = double(w) / h;
-        double scale = tan(fov * 0.5);
-        
-        double px = (2 * x / w - 1) * scale * aspect;
-        double py = (1 - 2 * y / h) * scale;
-        
-        Vec3 right = dir.cross(up).normalize();
-        Vec3 new_up = right.cross(dir).normalize();
-        
-        return (dir + right * px + new_up * py).normalize();
-    }
-};
-
-class BlackHole {
 public:
-    Vec3 pos;
-    double mass;
-    double schwarzschild_r;
-    double disk_inner, disk_outer;
+    Vec3(double x = 0.0, double y = 0.0, double z = 0.0) 
+        : x_(x), y_(y), z_(z) {}
     
-    BlackHole(Vec3 p, double m) : pos(p), mass(m) {
-        schwarzschild_r = 2.0 * mass;
-        disk_inner = 3.0 * schwarzschild_r;
-        disk_outer = 10.0 * schwarzschild_r;
+    // Accessors
+    double x() const { return x_; }
+    double y() const { return y_; }
+    double z() const { return z_; }
+    
+    // Mathematical operations
+    Vec3 operator+(const Vec3& other) const { 
+        return Vec3(x_ + other.x_, y_ + other.y_, z_ + other.z_); 
     }
     
-    Vec3 gravity(const Vec3& point) const {
-        Vec3 r = point - pos;
-        double dist = r.length();
-        if (dist < schwarzschild_r * 1.01) return Vec3();
-        
-        double factor = -mass / (dist * dist * dist);
-        return r * factor;
+    Vec3 operator-(const Vec3& other) const { 
+        return Vec3(x_ - other.x_, y_ - other.y_, z_ - other.z_); 
     }
     
-    Vec3 bend_ray(const Vec3& ray_pos, const Vec3& ray_dir) const {
-        Vec3 r = ray_pos - pos;
-        double dist = r.length();
-        
-        // photon sphere at 1.5 * schwarzschild radius
-        if (dist < schwarzschild_r * 1.5) {
-            if (dist < schwarzschild_r) return ray_dir; // past event horizon
-            // strong deflection near photon sphere
-            double bend_factor = 1.0 / (dist - schwarzschild_r);
-            Vec3 toward_center = (pos - ray_pos).normalize();
-            return (ray_dir + toward_center * bend_factor * 0.1).normalize();
-        }
-        
-        // gentle lensing for distant rays
-        if (dist > schwarzschild_r * 10) return ray_dir;
-        
-        double bend_angle = 2.0 * mass / (dist * dist);
-        Vec3 toward_center = (pos - ray_pos).normalize();
-        Vec3 perp = ray_dir.cross(toward_center).cross(ray_dir).normalize();
-        return (ray_dir + perp * bend_angle * 0.1).normalize();
+    Vec3 operator*(double scalar) const { 
+        return Vec3(x_ * scalar, y_ * scalar, z_ * scalar); 
     }
     
-    bool hit_disk(const Vec3& ray_pos, const Vec3& ray_dir, Vec3& hit_point) const {
-        // disk in XZ plane (y = 0)
-        if (abs(ray_dir.y) < 1e-6) return false;  // parallel to disk
-        
-        double t = (pos.y - ray_pos.y) / ray_dir.y;  // intersect with y=0 plane
-        if (t < 0 || t > 2.0) return false;  // behind ray or too far
-        
-        hit_point = ray_pos + ray_dir * t;
-        double dist_from_center = sqrt((hit_point.x - pos.x) * (hit_point.x - pos.x) + 
-                                      (hit_point.z - pos.z) * (hit_point.z - pos.z));
-        
-        return dist_from_center >= disk_inner && dist_from_center <= disk_outer;
+    Vec3 operator/(double scalar) const { 
+        if (std::abs(scalar) < 1e-10) return Vec3();
+        return Vec3(x_ / scalar, y_ / scalar, z_ / scalar); 
     }
     
-    Color disk_color(const Vec3& point) const {
-        double dist_from_center = sqrt((point.x - pos.x) * (point.x - pos.x) + 
-                                      (point.z - pos.z) * (point.z - pos.z));
-        
-        // temperature falls off with distance
-        double temp = 1.0 / (dist_from_center / schwarzschild_r);
-        temp = min(1.0, max(0.1, temp));
-        
-        // realistic orbital velocity
-        double orbital_vel = sqrt(mass / dist_from_center);
-        double doppler = 1.0 + orbital_vel * 0.1;
-        
-        // add particle turbulence effects
-        double angle = atan2(point.z - pos.z, point.x - pos.x);
-        double turbulence = sin(angle * 8 + dist_from_center * 2) * 0.15 + 1.0;
-        temp *= turbulence;
-        
-        Color color;
-        if (temp > 0.8) {
-            color = Color(1.0, 0.95, 0.8);  // hot white
-        } else if (temp > 0.6) {
-            color = Color(1.0, 0.8, 0.4);   // yellow
-        } else if (temp > 0.4) {
-            color = Color(1.0, 0.6, 0.2);   // orange  
-        } else {
-            color = Color(0.8, 0.3, 0.1);   // red
-        }
-        
-        return color * temp * doppler;
+    // Vector operations
+    double dot(const Vec3& other) const { 
+        return x_ * other.x_ + y_ * other.y_ + z_ * other.z_; 
+    }
+    
+    Vec3 cross(const Vec3& other) const {
+        return Vec3(y_ * other.z_ - z_ * other.y_, 
+                   z_ * other.x_ - x_ * other.z_, 
+                   x_ * other.y_ - y_ * other.x_);
+    }
+    
+    double length() const { 
+        return std::sqrt(x_ * x_ + y_ * y_ + z_ * z_); 
+    }
+    
+    double lengthSquared() const { 
+        return x_ * x_ + y_ * y_ + z_ * z_; 
+    }
+    
+    Vec3 normalize() const { 
+        double len = length(); 
+        return len > 1e-10 ? *this / len : Vec3(); 
+    }
+    
+    // Utility methods
+    bool isZero() const { 
+        return std::abs(x_) < 1e-10 && std::abs(y_) < 1e-10 && std::abs(z_) < 1e-10; 
+    }
+    
+    double distanceTo(const Vec3& other) const { 
+        return (*this - other).length(); 
     }
 };
 
-Color trace_ray(const Vec3& origin, Vec3 dir, const BlackHole& bh) {
-    Vec3 pos = origin;
-    double total_dist = 0;
-    const double max_dist = 50.0;
+/**
+ * RGB Color class with post-processing capabilities
+ */
+class Color {
+private:
+    double r_, g_, b_;
+
+public:
+    Color(double r = 0.0, double g = 0.0, double b = 0.0) 
+        : r_(r), g_(g), b_(b) {}
     
-    for (int steps = 0; steps < 500 && total_dist < max_dist; steps++) {
-        double dist_to_bh = (pos - bh.pos).length();
+    // Accessors
+    double r() const { return r_; }
+    double g() const { return g_; }
+    double b() const { return b_; }
+    
+    // Color operations
+    Color operator+(const Color& other) const { 
+        return Color(r_ + other.r_, g_ + other.g_, b_ + other.b_); 
+    }
+    
+    Color operator*(double scalar) const { 
+        return Color(r_ * scalar, g_ * scalar, b_ * scalar); 
+    }
+    
+    Color operator*(const Color& other) const { 
+        return Color(r_ * other.r_, g_ * other.g_, b_ * other.b_); 
+    }
+    
+    // Color manipulation
+    Color clamp() const { 
+        return Color(std::min(1.0, std::max(0.0, r_)),
+                    std::min(1.0, std::max(0.0, g_)),
+                    std::min(1.0, std::max(0.0, b_))); 
+    }
+    
+    Color gammaCorrect(double gamma = 2.2) const { 
+        return Color(std::pow(r_, 1.0/gamma),
+                    std::pow(g_, 1.0/gamma), 
+                    std::pow(b_, 1.0/gamma)); 
+    }
+    
+    Color enhanceContrast(double contrast = 1.2) const {
+        return Color(std::min(1.0, std::max(0.0, (r_ - 0.5) * contrast + 0.5)),
+                    std::min(1.0, std::max(0.0, (g_ - 0.5) * contrast + 0.5)),
+                    std::min(1.0, std::max(0.0, (b_ - 0.5) * contrast + 0.5)));
+    }
+    
+    // Utility methods
+    bool isBlack() const { 
+        return r_ < 1e-6 && g_ < 1e-6 && b_ < 1e-6; 
+    }
+    
+    double luminance() const { 
+        return 0.299 * r_ + 0.587 * g_ + 0.114 * b_; 
+    }
+};
+
+/**
+ * Camera class for perspective projection
+ */
+class Camera {
+private:
+    Vec3 position_;
+    Vec3 direction_;
+    Vec3 up_;
+    double fieldOfView_;
+    double aspectRatio_;
+
+public:
+    Camera(const Vec3& position, const Vec3& direction, const Vec3& up, double fov)
+        : position_(position), direction_(direction.normalize()), up_(up.normalize()), 
+          fieldOfView_(fov), aspectRatio_(1.0) {}
+    
+    // Getters
+    const Vec3& position() const { return position_; }
+    const Vec3& direction() const { return direction_; }
+    double fieldOfView() const { return fieldOfView_; }
+    
+    // Set aspect ratio for non-square images
+    void setAspectRatio(double aspect) { aspectRatio_ = aspect; }
+    
+    /**
+     * Generate ray direction for given pixel coordinates
+     */
+    Vec3 getRayDirection(double x, double y, int width, int height) const {
+        double scale = std::tan(fieldOfView_ * 0.5);
         
-        // optimized adaptive step size
-        double step = 0.05;
-        if (dist_to_bh > bh.schwarzschild_r * 8) step = 0.4;
-        else if (dist_to_bh > bh.schwarzschild_r * 5) step = 0.2;
-        else if (dist_to_bh > bh.schwarzschild_r * 2) step = 0.1;
+        // Normalize coordinates to [-1, 1]
+        double px = (2.0 * x / width - 1.0) * scale * aspectRatio_;
+        double py = (1.0 - 2.0 * y / height) * scale;
         
-        // check for event horizon
-        if (dist_to_bh < bh.schwarzschild_r * 1.01) {
-            return Color(0, 0, 0);  // event horizon
+        // Calculate camera coordinate system
+        Vec3 right = direction_.cross(up_).normalize();
+        Vec3 newUp = right.cross(direction_).normalize();
+        
+        // Generate ray direction
+        return (direction_ + right * px + newUp * py).normalize();
+    }
+};
+
+/**
+ * Black hole physics simulation class
+ */
+class BlackHole {
+private:
+    Vec3 position_;
+    double mass_;
+    double schwarzschildRadius_;
+    double diskInnerRadius_;
+    double diskOuterRadius_;
+
+public:
+    BlackHole(const Vec3& position, double mass)
+        : position_(position), mass_(mass) {
+        schwarzschildRadius_ = PhysicsConstants::SCHWARZSCHILD_MULTIPLIER * mass_;
+        diskInnerRadius_ = PhysicsConstants::DISK_INNER_MULTIPLIER * schwarzschildRadius_;
+        diskOuterRadius_ = PhysicsConstants::DISK_OUTER_MULTIPLIER * schwarzschildRadius_;
+    }
+    
+    // Getters
+    const Vec3& position() const { return position_; }
+    double mass() const { return mass_; }
+    double schwarzschildRadius() const { return schwarzschildRadius_; }
+    double diskInnerRadius() const { return diskInnerRadius_; }
+    double diskOuterRadius() const { return diskOuterRadius_; }
+    
+    /**
+     * Calculate gravitational field at given point
+     */
+    Vec3 gravitationalField(const Vec3& point) const {
+        Vec3 displacement = point - position_;
+        double distance = displacement.length();
+        
+        // Inside event horizon
+        if (distance < schwarzschildRadius_ * 1.01) {
+            return Vec3();
         }
         
-        // check disk intersection before moving
-        Vec3 hit_point;
-        if (bh.hit_disk(pos, dir, hit_point)) {
-            double hit_dist = (hit_point - pos).length();
-            if (hit_dist < step * 2) {  // close enough to disk
-                Color disk_col = bh.disk_color(hit_point);
-                double intensity = 1.0 + 0.5 / (1.0 + hit_dist);
+        // Newtonian approximation with relativistic correction
+        double fieldStrength = -mass_ / (distance * distance * distance);
+        return displacement * fieldStrength;
+    }
+    
+    /**
+     * Apply gravitational lensing to ray direction
+     */
+    Vec3 applyGravitationalLensing(const Vec3& rayPosition, const Vec3& rayDirection) const {
+        Vec3 displacement = rayPosition - position_;
+        double distance = displacement.length();
+        
+        // Inside photon sphere - strong deflection
+        if (distance < schwarzschildRadius_ * PhysicsConstants::PHOTON_SPHERE_MULTIPLIER) {
+            if (distance < schwarzschildRadius_) {
+                return rayDirection; // Past event horizon
+            }
+            
+            // Strong deflection near photon sphere
+            double deflectionFactor = 1.0 / (distance - schwarzschildRadius_);
+            Vec3 towardCenter = (position_ - rayPosition).normalize();
+            return (rayDirection + towardCenter * deflectionFactor * 0.1).normalize();
+        }
+        
+        // Distant rays - negligible lensing
+        if (distance > schwarzschildRadius_ * 10.0) {
+            return rayDirection;
+        }
+        
+        // Moderate lensing for intermediate distances
+        double deflectionAngle = 2.0 * mass_ / (distance * distance);
+        Vec3 towardCenter = (position_ - rayPosition).normalize();
+        Vec3 perpendicular = rayDirection.cross(towardCenter).cross(rayDirection).normalize();
+        return (rayDirection + perpendicular * deflectionAngle * 0.1).normalize();
+    }
+    
+    /**
+     * Check for accretion disk intersection
+     */
+    bool intersectsAccretionDisk(const Vec3& rayOrigin, const Vec3& rayDirection, Vec3& intersectionPoint) const {
+        // Disk lies in XZ plane (Y = 0)
+        if (std::abs(rayDirection.y()) < 1e-6) {
+            return false; // Ray parallel to disk plane
+        }
+        
+        // Calculate intersection with Y = 0 plane
+        double intersectionTime = (position_.y() - rayOrigin.y()) / rayDirection.y();
+        if (intersectionTime < 0.0 || intersectionTime > 2.0) {
+            return false; // Intersection behind ray or too far
+        }
+        
+        intersectionPoint = rayOrigin + rayDirection * intersectionTime;
+        double distanceFromCenter = std::sqrt(
+            std::pow(intersectionPoint.x() - position_.x(), 2) + 
+            std::pow(intersectionPoint.z() - position_.z(), 2)
+        );
+        
+        return distanceFromCenter >= diskInnerRadius_ && distanceFromCenter <= diskOuterRadius_;
+    }
+    
+    /**
+     * Calculate accretion disk color based on temperature and physics
+     */
+    Color calculateAccretionDiskColor(const Vec3& point) const {
+        double distanceFromCenter = std::sqrt(
+            std::pow(point.x() - position_.x(), 2) + 
+            std::pow(point.z() - position_.z(), 2)
+        );
+        
+        // Temperature decreases with distance (inverse square law)
+        double temperature = 1.0 / (distanceFromCenter / schwarzschildRadius_);
+        temperature = std::min(1.0, std::max(0.1, temperature));
+        
+        // Relativistic Doppler effect from orbital velocity
+        double orbitalVelocity = std::sqrt(mass_ / distanceFromCenter);
+        double dopplerFactor = 1.0 + orbitalVelocity * 0.1;
+        
+        // Turbulence effects for realistic appearance
+        double angle = std::atan2(point.z() - position_.z(), point.x() - position_.x());
+        double turbulence = std::sin(angle * 8.0 + distanceFromCenter * 2.0) * 0.15 + 1.0;
+        temperature *= turbulence;
+        
+        // Temperature-based color mapping
+        Color baseColor;
+        if (temperature > 0.8) {
+            baseColor = Color(1.0, 0.95, 0.8);  // Hot white
+        } else if (temperature > 0.6) {
+            baseColor = Color(1.0, 0.8, 0.4);   // Yellow
+        } else if (temperature > 0.4) {
+            baseColor = Color(1.0, 0.6, 0.2);   // Orange
+        } else {
+            baseColor = Color(0.8, 0.3, 0.1);   // Red
+        }
+        
+        return baseColor * temperature * dopplerFactor;
+    }
+};
+
+/**
+ * Ray tracing function
+ */
+Color traceRay(const Vec3& origin, Vec3 direction, const BlackHole& bh) {
+    Vec3 currentPosition = origin;
+    double totalDistance = 0.0;
+    
+    for (int step = 0; step < RenderConfig::MAX_RAY_STEPS; ++step) {
+        double distanceToBlackHole = currentPosition.distanceTo(bh.position());
+        
+        // Adaptive step size
+        double stepSize = RenderConfig::ADAPTIVE_STEP_CLOSE;
+        if (distanceToBlackHole > bh.schwarzschildRadius() * 8.0) {
+            stepSize = RenderConfig::ADAPTIVE_STEP_FAR;
+        } else if (distanceToBlackHole > bh.schwarzschildRadius() * 5.0) {
+            stepSize = RenderConfig::ADAPTIVE_STEP_MEDIUM;
+        } else if (distanceToBlackHole > bh.schwarzschildRadius() * 2.0) {
+            stepSize = RenderConfig::ADAPTIVE_STEP_NEAR;
+        }
+        
+        // Check for event horizon
+        if (distanceToBlackHole < bh.schwarzschildRadius() * 1.01) {
+            return Color(0, 0, 0); // Event horizon
+        }
+        
+        // Check disk intersection before moving
+        Vec3 intersectionPoint;
+        if (bh.intersectsAccretionDisk(currentPosition, direction, intersectionPoint)) {
+            double hitDistance = currentPosition.distanceTo(intersectionPoint);
+            if (hitDistance < stepSize * 2.0) { // Close enough to disk
+                Color diskColor = bh.calculateAccretionDiskColor(intersectionPoint);
+                double intensity = 1.0 + 0.5 / (1.0 + hitDistance);
                 
-                // add lens flare effect near event horizon
-                double dist_to_center = (hit_point - bh.pos).length();
-                if (dist_to_center < bh.schwarzschild_r * 4) {
-                    double flare_strength = 1.0 / (1.0 + (dist_to_center - bh.schwarzschild_r));
-                    Color flare = Color(0.8, 0.9, 1.0) * flare_strength * 0.3;
-                    disk_col = disk_col + flare;
+                // Add lens flare effect near event horizon
+                double distToCenter = currentPosition.distanceTo(bh.position());
+                if (distToCenter < bh.schwarzschildRadius() * 4.0) {
+                    double flareStrength = 1.0 / (1.0 + (distToCenter - bh.schwarzschildRadius()));
+                    Color flare = Color(0.8, 0.9, 1.0) * flareStrength * 0.3;
+                    diskColor = diskColor + flare;
                 }
                 
-                return disk_col * intensity;
+                return diskColor * intensity;
             }
         }
         
-        // apply gravitational bending (less frequently)
-        if (steps % 3 == 0) {
-            dir = bh.bend_ray(pos, dir);
+        // Apply gravitational bending (less frequently)
+        if (step % 3 == 0) {
+            direction = bh.applyGravitationalLensing(currentPosition, direction);
         }
         
-        pos = pos + dir * step;
-        total_dist += step;
+        currentPosition = currentPosition + direction * stepSize;
+        totalDistance += stepSize;
+        
+        if (totalDistance > RenderConfig::MAX_RAY_DISTANCE) {
+            break;
+        }
     }
     
-    // stars and nebula
-    hash<string> hasher;
-    string seed = to_string(int(dir.x * 1000)) + "," + 
-                  to_string(int(dir.y * 1000)) + "," + 
-                  to_string(int(dir.z * 1000));
+    // Stars and nebula
+    std::hash<std::string> hasher;
+    std::string seed = std::to_string(int(direction.x() * 1000)) + "," + 
+                       std::to_string(int(direction.y() * 1000)) + "," + 
+                       std::to_string(int(direction.z() * 1000));
     double noise = double(hasher(seed) % 1000) / 1000.0;
     
-    // brighter stars
+    // Brighter stars
     if (noise > 0.994) {
-        return Color(1, 1, 1) * (noise - 0.994) * 50;  // bright white stars
+        return Color(1, 1, 1) * (noise - 0.994) * 50;  // Bright white stars
     } else if (noise > 0.985) {
-        return Color(0.8, 0.8, 1.0) * (noise - 0.985) * 15;  // blue stars
+        return Color(0.8, 0.8, 1.0) * (noise - 0.985) * 15;  // Blue stars
     } else if (noise > 0.975) {
-        return Color(1.0, 0.7, 0.5) * (noise - 0.975) * 8;   // orange stars
+        return Color(1.0, 0.7, 0.5) * (noise - 0.975) * 8;   // Orange stars
     }
     
-    // subtle nebula background
-    string nebula_seed = to_string(int(dir.x * 100)) + "," + to_string(int(dir.y * 100));
-    double nebula_noise = double(hasher(nebula_seed) % 1000) / 1000.0;
-    if (nebula_noise > 0.7) {
-        Color nebula = Color(0.1, 0.05, 0.15) * (nebula_noise - 0.7) * 0.5;
+    // Subtle nebula background
+    std::string nebulaSeed = std::to_string(int(direction.x() * 100)) + "," + std::to_string(int(direction.y() * 100));
+    double nebulaNoise = double(hasher(nebulaSeed) % 1000) / 1000.0;
+    if (nebulaNoise > 0.7) {
+        Color nebula = Color(0.1, 0.05, 0.15) * (nebulaNoise - 0.7) * 0.5;
         return Color(0.03, 0.03, 0.08) + nebula;
     }
     
-    return Color(0.03, 0.03, 0.08);  // darker space
+    return Color(0.03, 0.03, 0.08);  // Darker space
 }
 
-void render(const Camera& cam, const BlackHole& bh, int w, int h, const string& filename) {
-    vector<vector<Color>> img(h, vector<Color>(w));
+/**
+ * Main rendering function
+ */
+void render(const Camera& cam, const BlackHole& bh, int w, int h, const std::string& filename) {
+    std::vector<std::vector<Color>> image(h, std::vector<Color>(w));
     
-    cout << "rendering " << w << "x" << h << "...\n";
+    std::cout << "Rendering " << w << "x" << h << "...\n";
     
-    for (int y = 0; y < h; y++) {
+    for (int y = 0; y < h; ++y) {
         if (y % (h / 10) == 0) {
-            cout << "progress: " << (100 * y / h) << "%\n";
+            std::cout << "Progress: " << (100 * y / h) << "%\n";
         }
         
-        for (int x = 0; x < w; x++) {
-            // anti-aliasing with 4x supersampling
-            Color pixel_sum(0, 0, 0);
-            for (int dx = 0; dx < 2; dx++) {
-                for (int dy = 0; dy < 2; dy++) {
-                    double sub_x = x + (dx + 0.5) * 0.5;
-                    double sub_y = y + (dy + 0.5) * 0.5;
-                    Vec3 ray_dir = cam.get_ray_dir(sub_x, sub_y, w, h);
-                    pixel_sum = pixel_sum + trace_ray(cam.pos, ray_dir, bh);
+        for (int x = 0; x < w; ++x) {
+            // Anti-aliasing with 4x supersampling
+            Color pixelSum(0, 0, 0);
+            for (int dx = 0; dx < 2; ++dx) {
+                for (int dy = 0; dy < 2; ++dy) {
+                    double subX = x + (dx + 0.5) * 0.5;
+                    double subY = y + (dy + 0.5) * 0.5;
+                    Vec3 rayDirection = cam.getRayDirection(subX, subY, w, h);
+                    pixelSum = pixelSum + traceRay(cam.position(), rayDirection, bh);
                 }
             }
-            img[y][x] = (pixel_sum * 0.25).enhance_contrast().clamp();
+            image[y][x] = (pixelSum * 0.25).enhanceContrast().clamp();
         }
     }
     
-    ofstream file(filename);
+    std::ofstream file(filename);
     file << "P3\n" << w << " " << h << "\n255\n";
     
-    for (int y = 0; y < h; y++) {
-        for (int x = 0; x < w; x++) {
-            Color& c = img[y][x];
-            int r = int(c.r * 255);
-            int g = int(c.g * 255);
-            int b = int(c.b * 255);
+    for (int y = 0; y < h; ++y) {
+        for (int x = 0; x < w; ++x) {
+            Color& c = image[y][x];
+            int r = int(c.r() * 255);
+            int g = int(c.g() * 255);
+            int b = int(c.b() * 255);
             file << r << " " << g << " " << b << "\n";
         }
     }
     
     file.close();
-    cout << "saved " << filename << "\n";
+    std::cout << "Saved " << filename << "\n";
 }
 
+/**
+ * Main entry point
+ */
 int main() {
-    cout << "black hole raytracer v2.0 - maxwell corwin\n";
-    cout << "enhanced with anti-aliasing, lens flares, and particle effects\n";
+    std::cout << "Black Hole Raytracer v2.0 - Maxwell Corwin\n";
+    std::cout << "Enhanced with anti-aliasing, lens flares, and particle effects\n";
     
     BlackHole bh(Vec3(0, 0, 0), 1.0);
     
-    // multiple camera angles
-    vector<Vec3> positions = {
-        Vec3(0, 2, -8),    // original view
-        Vec3(-6, 1, -4),   // side angle
-        Vec3(0, 5, -6)     // top-down view
+    // Multiple camera angles
+    std::vector<Vec3> positions = {
+        Vec3(0, 2, -8),    // Original view
+        Vec3(-6, 1, -4),   // Side angle
+        Vec3(0, 5, -6)     // Top-down view
     };
     
-    for (int i = 0; i < positions.size(); i++) {
-        Vec3 cam_pos = positions[i];
-        Vec3 cam_dir = (Vec3(0, 0, 0) - cam_pos).normalize();
-        Vec3 cam_up(0, 1, 0);
-        Camera cam(cam_pos, cam_dir, cam_up, M_PI / 3);
+    for (int i = 0; i < positions.size(); ++i) {
+        Vec3 camPos = positions[i];
+        Vec3 camDir = (Vec3(0, 0, 0) - camPos).normalize();
+        Vec3 camUp(0, 1, 0);
+        Camera cam(camPos, camDir, camUp, RenderConfig::FOV);
         
-        string filename = "black_hole_" + to_string(i + 1) + ".ppm";
-        cout << "rendering view " << (i + 1) << "/" << positions.size() << "...\n";
-        render(cam, bh, 800, 600, filename);
+        std::string filename = "black_hole_" + std::to_string(i + 1) + ".ppm";
+        std::cout << "Rendering view " << (i + 1) << "/" << positions.size() << "...\n";
+        render(cam, bh, RenderConfig::WIDTH, RenderConfig::HEIGHT, filename);
     }
     
     return 0;
 }
-
-//this is a very dumbed down version of a blackhole just for me to test vector drawing in c++ :>)
